@@ -10,7 +10,7 @@ import openai
 import tiktoken
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
-from .EmbeddingModels import BaseEmbeddingModel, OpenAIEmbeddingModel
+from .EmbeddingModels import BaseEmbeddingModel, JinaEmbeddingModel
 from .SummarizationModels import (BaseSummarizationModel,
                                   GPT3TurboSummarizationModel)
 from .tree_structures import Node, Tree
@@ -25,7 +25,7 @@ class TreeBuilderConfig:
     def __init__(
         self,
         tokenizer=None,
-        max_tokens=None,
+        max_chunk_tokens=None,
         num_layers=None,
         threshold=None,
         top_k=None,
@@ -39,11 +39,11 @@ class TreeBuilderConfig:
             tokenizer = tiktoken.get_encoding("cl100k_base")
         self.tokenizer = tokenizer
 
-        if max_tokens is None:
-            max_tokens = 100
-        if not isinstance(max_tokens, int) or max_tokens < 1:
-            raise ValueError("max_tokens must be an integer and at least 1")
-        self.max_tokens = max_tokens
+        if max_chunk_tokens is None:
+            max_chunk_tokens = 100
+        if not isinstance(max_chunk_tokens, int) or max_chunk_tokens < 1:
+            raise ValueError("max_chunk_tokens must be an integer and at least 1")
+        self.max_chunk_tokens = max_chunk_tokens
 
         if num_layers is None:
             num_layers = 5
@@ -82,7 +82,7 @@ class TreeBuilderConfig:
         self.summarization_model = summarization_model
 
         if embedding_models is None:
-            embedding_models = {"OpenAI": OpenAIEmbeddingModel()}
+            embedding_models = {"JinaAI": JinaEmbeddingModel()}
         if not isinstance(embedding_models, dict):
             raise ValueError(
                 "embedding_models must be a dictionary of model_name: instance pairs"
@@ -106,7 +106,7 @@ class TreeBuilderConfig:
         config_log = """
         TreeBuilderConfig:
             Tokenizer: {tokenizer}
-            Max Tokens: {max_tokens}
+            Max Chunk Tokens: {max_chunk_tokens}
             Num Layers: {num_layers}
             Threshold: {threshold}
             Top K: {top_k}
@@ -117,7 +117,7 @@ class TreeBuilderConfig:
             Cluster Embedding Model: {cluster_embedding_model}
         """.format(
             tokenizer=self.tokenizer,
-            max_tokens=self.max_tokens,
+            max_chunk_tokens=self.max_chunk_tokens,
             num_layers=self.num_layers,
             threshold=self.threshold,
             top_k=self.top_k,
@@ -141,7 +141,7 @@ class TreeBuilder:
         """Initializes the tokenizer, maximum tokens, number of layers, top-k value, threshold, and selection mode."""
 
         self.tokenizer = config.tokenizer
-        self.max_tokens = config.max_tokens
+        self.max_chunk_tokens = config.max_chunk_tokens
         self.num_layers = config.num_layers
         self.top_k = config.top_k
         self.threshold = config.threshold
@@ -268,7 +268,7 @@ class TreeBuilder:
         Returns:
             Tree: The golden tree structure.
         """
-        chunks = split_text(text, self.tokenizer, self.max_tokens)
+        chunks = split_text(text, self.tokenizer, self.max_chunk_tokens)
 
         logging.info("Creating Leaf Nodes")
 
@@ -316,54 +316,56 @@ class TreeBuilder:
         """
         pass
 
-        # logging.info("Using Transformer-like TreeBuilder")
+        logging.info("Using Transformer-like TreeBuilder")
 
-        # def process_node(idx, current_level_nodes, new_level_nodes, all_tree_nodes, next_node_index, lock):
-        #     relevant_nodes_chunk = self.get_relevant_nodes(
-        #         current_level_nodes[idx], current_level_nodes
-        #     )
 
-        #     node_texts = get_text(relevant_nodes_chunk)
+        def process_node(idx, current_level_nodes, new_level_nodes, all_tree_nodes, next_node_index, lock):
+            relevant_nodes_chunk = self.get_relevant_nodes(
+                current_level_nodes[idx], current_level_nodes
+            )
 
-        #     summarized_text = self.summarize(
-        #         context=node_texts,
-        #         max_tokens=self.summarization_length,
-        #     )
+            node_texts = get_text(relevant_nodes_chunk)
 
-        #     logging.info(
-        #         f"Node Texts Length: {len(self.tokenizer.encode(node_texts))}, Summarized Text Length: {len(self.tokenizer.encode(summarized_text))}"
-        #     )
+            summarized_text = self.summarize(
+                context=node_texts,
+                max_tokens=self.summarization_length,
+            )
 
-        #     next_node_index, new_parent_node = self.create_node(
-        #         next_node_index,
-        #         summarized_text,
-        #         {node.index for node in relevant_nodes_chunk}
-        #     )
+            logging.info(
+                f"Node Texts Length: {len(self.tokenizer.encode(node_texts))}, Summarized Text Length: {len(self.tokenizer.encode(summarized_text))}"
+            )
 
-        #     with lock:
-        #         new_level_nodes[next_node_index] = new_parent_node
+            next_node_index, new_parent_node = self.create_node(
+                next_node_index,
+                summarized_text,
+                {node.index for node in relevant_nodes_chunk}
+            )
 
-        # for layer in range(self.num_layers):
-        #     logging.info(f"Constructing Layer {layer}: ")
+            with lock:
+                new_level_nodes[next_node_index] = new_parent_node
 
-        #     node_list_current_layer = get_node_list(current_level_nodes)
-        #     next_node_index = len(all_tree_nodes)
+        for layer in range(self.num_layers):
+            logging.info(f"Constructing Layer {layer}: ")
 
-        #     new_level_nodes = {}
-        #     lock = Lock()
+            node_list_current_layer = get_node_list(current_level_nodes)
+            next_node_index = len(all_tree_nodes)
 
-        #     if use_multithreading:
-        #         with ThreadPoolExecutor() as executor:
-        #             for idx in range(0, len(node_list_current_layer)):
-        #                 executor.submit(process_node, idx, node_list_current_layer, new_level_nodes, all_tree_nodes, next_node_index, lock)
-        #                 next_node_index += 1
-        #             executor.shutdown(wait=True)
-        #     else:
-        #         for idx in range(0, len(node_list_current_layer)):
-        #             process_node(idx, node_list_current_layer, new_level_nodes, all_tree_nodes, next_node_index, lock)
+            new_level_nodes = {}
+            lock = Lock()
 
-        #     layer_to_nodes[layer + 1] = list(new_level_nodes.values())
-        #     current_level_nodes = new_level_nodes
-        #     all_tree_nodes.update(new_level_nodes)
+            if use_multithreading:
+                with ThreadPoolExecutor() as executor:
+                    for idx in range(0, len(node_list_current_layer)):
+                        executor.submit(process_node, idx, node_list_current_layer, new_level_nodes, all_tree_nodes, next_node_index, lock)
+                        next_node_index += 1
+                    executor.shutdown(wait=True)
+            else:
+                for idx in range(0, len(node_list_current_layer)):
+                    process_node(idx, node_list_current_layer, new_level_nodes, all_tree_nodes, next_node_index, lock)
+                    next_node_index += 1
 
-        # return new_level_nodes
+            layer_to_nodes[layer + 1] = list(new_level_nodes.values())
+            current_level_nodes = new_level_nodes
+            all_tree_nodes.update(new_level_nodes)
+
+        return new_level_nodes

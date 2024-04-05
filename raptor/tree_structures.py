@@ -1,28 +1,35 @@
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Optional
+from dataclasses import dataclass
 
 
+@dataclass
 class Node:
     """
     Represents a node in the hierarchical tree structure.
     """
+    text: str
+    index: int
+    children: Set[int]
+    embeddings: Optional[List] = None
 
-    def __init__(self, text: str, index: int, children: Set[int], embeddings) -> None:
-        self.text = text
-        self.index = index
-        self.children = children
-        self.embeddings = embeddings
-
-
+@dataclass
 class Tree:
     """
     Represents the entire hierarchical tree structure.
     """
+    all_nodes: List
+    root_nodes: List
+    leaf_nodes: List
+    num_layers: int
+    layer_to_nodes: Dict
 
-    def __init__(
-        self, all_nodes, root_nodes, leaf_nodes, num_layers, layer_to_nodes
-    ) -> None:
-        self.all_nodes = all_nodes
-        self.root_nodes = root_nodes
-        self.leaf_nodes = leaf_nodes
-        self.num_layers = num_layers
-        self.layer_to_nodes = layer_to_nodes
+@dataclass
+class Document:
+    source_filepath: str
+    tree: Tree = None
+    metadata: Dict = None
+
+    def get_text(self):
+        with open(self.source_filepath) as f:
+            text = f.read()
+        return text
