@@ -1,4 +1,5 @@
 import logging
+import requests
 import os
 
 from openai import OpenAI
@@ -183,3 +184,47 @@ class UnifiedQAModel(BaseQAModel):
         input_string = question + " \\n " + context
         output = self.run_model(input_string)
         return output[0]
+
+
+class AzureLlamaQAModel(BaseQAModel):
+    def __init__(self, model_name='llama-2-70b-chat') -> None:
+        self.endpoint = "https://Llama-2-70b-chat-suraj-demo-serverless.eastus2.inference.ai.azure.com/v1/completions"
+        self.key = os.environ['KEY_70B']
+
+
+    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
+    def _attempt_answer_question(
+        self, context, question, max_tokens=150, stop_sequence=None, temperature=0.7
+    ):
+        """
+        Generates an answer to the question given some context using Llama 2.
+        """
+        system = "Write an answer to the following QUESTION using the given CONTEXT."
+        user = f"QUESTION: {question}\n\nCONTEXT: {context}\n"
+        message = system + "\n\n" + user
+    
+        payload = {
+            "prompt": message,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stop": stop_sequence,
+        }
+        headers = {'Content-Type':'application/json', 'Authorization':(self.key)}
+        response = requests.post(self.endpoint, json=payload, headers=headers)
+        
+        if response.status_code == 200:
+            return response.json()['choices'][0]['text']
+        else:
+            print(f"Request failed with status code {response.status_code}")
+            return ""
+
+    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
+    def answer_question(self, context, question, max_tokens=400, stop_sequence=None):
+
+        try:
+            return self._attempt_answer_question(
+                context, question, max_tokens=max_tokens, stop_sequence=stop_sequence
+            )
+        except Exception as e:
+            print(e)
+            return e
