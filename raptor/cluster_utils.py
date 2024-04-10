@@ -1,7 +1,7 @@
 import logging
 import random
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 import tiktoken
@@ -131,14 +131,29 @@ class ClusteringAlgorithm(ABC):
 
 class RAPTOR_Clustering(ClusteringAlgorithm):
     def perform_clustering(
-        nodes: List[Node],
-        embedding_model_name: str,
-        max_length_in_cluster: int = 3500,
-        tokenizer=tiktoken.get_encoding("cl100k_base"),
-        reduction_dimension: int = 10,
-        threshold: float = 0.1,
-        verbose: bool = False,
-    ) -> List[List[Node]]:
+            nodes: List[Node],
+            embedding_model_name: str,
+            max_length_in_cluster: int = 3500,
+            tokenizer=tiktoken.get_encoding("cl100k_base"),
+            reduction_dimension: int = 10,
+            threshold: float = 0.1,
+            verbose: bool = False,
+        ) -> List[List[Node]]:
+        """
+        Performs clustering on a list of nodes using the given embedding model and returns a list of clusters of nodes.
+
+        Args:
+            nodes (List[Node]): The list of nodes to be clustered.
+            embedding_model_name (str): The name of the embedding model to be used for clustering.
+            max_length_in_cluster (int, optional): The maximum length of text allowed in a cluster. Defaults to 3500.
+            tokenizer (tiktoken.get_encoding, optional): The tokenizer to be used for encoding the text. Defaults to tiktoken.get_encoding("cl100k_base").
+            reduction_dimension (int, optional): The dimension of the reduced embeddings. Defaults to 10.
+            threshold (float, optional): The threshold value for clustering. Defaults to 0.1.
+            verbose (bool, optional): Whether to print verbose output. Defaults to False.
+
+        Returns:
+            List[List[Node]]: A list of clusters of nodes.
+        """
         # Get the embeddings from the nodes
         embeddings = np.array([node.embeddings[embedding_model_name] for node in nodes])
 

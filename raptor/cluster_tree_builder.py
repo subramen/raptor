@@ -40,6 +40,12 @@ class ClusterTreeConfig(TreeBuilderConfig):
 
 class ClusterTreeBuilder(TreeBuilder):
     def __init__(self, config) -> None:
+        """
+        Initialize the ClusterTreeBuilder with the given configuration.
+
+        Args:
+            config (ClusterTreeConfig): The configuration for the ClusterTreeBuilder.
+        """
         super().__init__(config)
 
         if not isinstance(config, ClusterTreeConfig):
@@ -59,6 +65,18 @@ class ClusterTreeBuilder(TreeBuilder):
         layer_to_nodes: Dict[int, List[Node]],
         use_multithreading: bool = False,
     ) -> Dict[int, Node]:
+        """
+        Construct a tree using the ClusterTreeBuilder.
+
+        Args:
+            current_level_nodes (Dict[int, Node]): The nodes at the current level.
+            all_tree_nodes (Dict[int, Node]): All nodes in the tree.
+            layer_to_nodes (Dict[int, List[Node]]): A mapping from layer to nodes.
+            use_multithreading (bool, optional): Whether to use multithreading. Defaults to False.
+
+        Returns:
+            Dict[int, Node]: The nodes at the next level.
+        """
         logging.info("Using Cluster TreeBuilder")
 
         next_node_index = len(all_tree_nodes)
@@ -66,30 +84,35 @@ class ClusterTreeBuilder(TreeBuilder):
         def process_cluster(
             cluster, new_level_nodes, next_node_index, summarization_length, lock
         ):
-            node_texts = get_text(cluster)
+            """
+            Process a cluster of nodes and create a new parent node for the cluster.
 
+            Args:
+                cluster (List[Node]): The cluster of nodes.
+                new_level_nodes (Dict[int, Node]): The nodes at the next level.
+                next_node_index (int): The index of the next node.
+                summarization_length (int): The length of the summarized text.
+                lock (Lock): A lock for synchronizing access to shared resources.
+            """
+            node_texts = get_text(cluster)
             summarized_text = self.summarize(
                 context=node_texts,
                 max_tokens=summarization_length,
             )
-
             logging.info(
                 f"Node Texts Length: {len(self.tokenizer.encode(node_texts))}, Summarized Text Length: {len(self.tokenizer.encode(summarized_text))}"
             )
-
+            children_indices = {node.index for node in cluster}
             __, new_parent_node = self.create_node(
-                next_node_index, summarized_text, {node.index for node in cluster}
+                next_node_index, summarized_text, children_indices=children_indices
             )
-
             with lock:
                 new_level_nodes[next_node_index] = new_parent_node
 
+
         for layer in range(self.num_layers):
-
-            new_level_nodes = {}
-
             logging.info(f"Constructing Layer {layer}")
-
+            new_level_nodes = {}
             node_list_current_layer = get_node_list(current_level_nodes)
 
             if len(node_list_current_layer) <= self.reduction_dimension + 1:
@@ -124,7 +147,6 @@ class ClusterTreeBuilder(TreeBuilder):
                         )
                         next_node_index += 1
                     executor.shutdown(wait=True)
-
             else:
                 for cluster in clusters:
                     process_cluster(
@@ -140,12 +162,12 @@ class ClusterTreeBuilder(TreeBuilder):
             current_level_nodes = new_level_nodes
             all_tree_nodes.update(new_level_nodes)
 
-            tree = Tree(
-                all_tree_nodes,
-                layer_to_nodes[layer + 1],
-                layer_to_nodes[0],
-                layer + 1,
-                layer_to_nodes,
-            )
+            # tree = Tree(
+            #     all_tree_nodes,
+            #     layer_to_nodes[layer + 1],
+            #     layer_to_nodes[0],
+            #     layer + 1,
+            #     layer_to_nodes,
+            # )
 
         return current_level_nodes
