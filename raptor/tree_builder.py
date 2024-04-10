@@ -156,7 +156,7 @@ class TreeBuilder:
         )
 
     def create_node(
-        self, index: int, text: str, children_indices: Optional[Set[int]] = None
+        self, index: int, text: str, span: Tuple[int, int]=(-1, -1), children_indices: Optional[Set[int]]=None
     ) -> Tuple[int, Node]:
         """Creates a new node with the given index, text, and (optionally) children indices.
 
@@ -176,7 +176,7 @@ class TreeBuilder:
             model_name: model.create_embedding(text)
             for model_name, model in self.embedding_models.items()
         }
-        return (index, Node(text, index, children_indices, embeddings))
+        return (index, Node(text=text, index=index, children=children_indices, embeddings=embeddings, span=span))
 
     def create_embedding(self, text) -> List[float]:
         """
@@ -235,7 +235,7 @@ class TreeBuilder:
 
         return nodes_to_add
 
-    def multithreaded_create_leaf_nodes(self, chunks: List[str]) -> Dict[int, Node]:
+    def multithreaded_create_leaf_nodes(self, chunk_indices: List[str]) -> Dict[int, Node]:
         """Creates leaf nodes using multithreading from the given list of text chunks.
 
         Args:
@@ -246,8 +246,8 @@ class TreeBuilder:
         """
         with ThreadPoolExecutor() as executor:
             future_nodes = {
-                executor.submit(self.create_node, index, text): (index, text)
-                for index, text in enumerate(chunks)
+                executor.submit(self.create_node, index, text, span=span): (index, text[start:end], (start, end,))
+                for index, (start, end,) in enumerate(chunk_indices)
             }
 
             leaf_nodes = {}
@@ -268,22 +268,21 @@ class TreeBuilder:
         Returns:
             Tree: The golden tree structure.
         """
-        chunks = split_text(text, self.tokenizer, self.max_chunk_tokens)
+        chunk_indices = split_text(text, self.tokenizer, self.max_chunk_tokens)
 
         logging.info("Creating Leaf Nodes")
 
         if use_multithreading:
-            leaf_nodes = self.multithreaded_create_leaf_nodes(chunks)
+            leaf_nodes = self.multithreaded_create_leaf_nodes(chunk_indices)
         else:
             leaf_nodes = {}
-            for index, text in enumerate(chunks):
-                __, node = self.create_node(index, text)
+            for index, (start, end) in enumerate(chunk_indices):
+                __, node = self.create_node(index, text[start:end], span=(start, end,))
                 leaf_nodes[index] = node
 
         layer_to_nodes = {0: list(leaf_nodes.values())}
 
         logging.info(f"Created {len(leaf_nodes)} Leaf Embeddings")
-
         logging.info("Building All Nodes")
 
         all_nodes = copy.deepcopy(leaf_nodes)
@@ -338,7 +337,7 @@ class TreeBuilder:
             next_node_index, new_parent_node = self.create_node(
                 next_node_index,
                 summarized_text,
-                {node.index for node in relevant_nodes_chunk}
+                children_indices={node.index for node in relevant_nodes_chunk}
             )
 
             with lock:

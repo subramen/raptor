@@ -1,6 +1,5 @@
-from typing import Dict, List, Set, Optional
+from typing import Dict, List, Set, Optional, Tuple
 from dataclasses import dataclass
-
 
 @dataclass
 class Node:
@@ -10,26 +9,25 @@ class Node:
     text: str
     index: int
     children: Set[int]
-    embeddings: Optional[List] = None
+    span: Tuple[int, int] = (-1, -1,)
+    embeddings: Dict[str, List] = None
 
 @dataclass
 class Tree:
     """
     Represents the entire hierarchical tree structure.
     """
-    all_nodes: List
-    root_nodes: List
-    leaf_nodes: List
+    all_nodes: Dict[int, Node]
+    root_nodes: Dict[int, Node]
+    leaf_nodes: Dict[int, Node]
     num_layers: int
-    layer_to_nodes: Dict
+    layer_to_nodes: Dict[int, List[Node]]
 
 @dataclass
 class Document:
     source_filepath: str
-    tree: Tree = None
-    metadata: Dict = None
 
     def get_text(self):
-        with open(self.source_filepath) as f:
+        with open(source_filepath) as f:
             text = f.read()
         return text

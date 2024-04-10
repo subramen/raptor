@@ -1,10 +1,12 @@
 import logging
+import pypdfium2
 import re
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Tuple
 
 import numpy as np
 import tiktoken
 from scipy import spatial
+from transformers import AutoTokenizer
 
 from .tree_structures import Node
 
@@ -18,8 +20,52 @@ def reverse_mapping(layer_to_nodes: Dict[int, List[Node]]) -> Dict[Node, int]:
             node_to_layer[node.index] = layer
     return node_to_layer
 
+def get_sentence_boundaries(text, max_char_len=-1):
+    sentence_splits = [match.start() for match in re.finditer(r'(?<=[.!?])\s?', text)]
+    sentence_idx = []
+    c = 0
+    for idx in sentence_splits:
+        # somtimes a wayward sentence might be longer than the permissible max_len
+        if max_char_len > 0 and idx - c >= max_char_len:
+            sentence_idx.append((c, c + max_char_len - 1,))
+            sentence_idx.append((c + max_char_len - 1, idx,))
+        else:
+            sentence_idx.append((c, idx,))
+        c = idx + 1
+    return sentence_idx
 
-def split_text(
+def spilt_text(text: str, tokenizer: AutoTokenizer, max_tokens: int) -> (List[Tuple[int, int]]):
+    """ 
+    Splits text into chunks based on the maximum number of tokens allowed per chunk.
+
+    Parameters:
+    text (str): The text to be split.
+    tokenizer (AutoTokenizer): A tokenizer object that can encode the text.
+    max_tokens (int): The maximum number of tokens allowed in each chunk.
+
+    Returns:
+    chunk_idx (List[Tuple[int, int]]): A list of tuples representing the start and end indices of each chunk.
+    """
+    sentence_idx = get_sentence_boundaries(text, max_tokens)
+    chunk_idx = []
+    chunk = [0, 0]
+    current_length = 0
+
+    for start_ix, end_ix in sentence_idx:
+        seq_len = len(tokenizer.encode(text[start_ix:end_ix]))
+        if current_length + seq_len < max_seq_len:
+            chunk[-1] = end_ix
+            current_length += seq_len
+        else:
+            chunk_idx.append(chunk)
+            chunk = [start_ix, end_ix]
+            current_length = seq_len
+            
+    chunk_idx.append(chunk)
+    return chunk_idx
+
+# TODO: Check if needs modification
+def split_text_old(
     text: str, tokenizer: tiktoken.get_encoding("cl100k_base"), max_tokens: int, overlap: int = 0
 ):
     """
@@ -126,7 +172,6 @@ def distances_from_embeddings(
 
     return distances
 
-
 def get_node_list(node_dict: Dict[int, Node]) -> List[Node]:
     """
     Converts a dictionary of node indices to a sorted list of nodes.
@@ -197,3 +242,17 @@ def indices_of_nearest_neighbors_from_distances(distances: List[float]) -> np.nd
         np.ndarray: An array of indices sorted by ascending distance.
     """
     return np.argsort(distances)
+
+
+def pdf2text(pdf_path, start=0, stop=None, stdout=False):
+    print("[log] Converting ", pdf_path)
+    pdf = pypdfium2.PdfDocument(pdf_path)
+    all_text=[]
+    allowed_pages = range(start, stop or len(pdf))
+    for ix, page in enumerate(pdf):
+        if ix in allowed_pages:
+            text = page.get_textpage().get_text_range()
+            all_text.append(text)
+        page.close()
+    pdf.close()
+    return '\n.'.join(all_text)
